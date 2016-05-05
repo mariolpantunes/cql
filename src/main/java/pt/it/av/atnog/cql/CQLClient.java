@@ -6,12 +6,14 @@ import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ *
+ */
 public class CQLClient implements AutoCloseable {
     public static final int DEFAULT_PORT = 9042;
     private Cluster cluster = null;
     protected Session session = null;
-    private PreparedStatement containsKeySpace, listTables, containsTable;
-    private SimpleStatement listKeySpaces;
+    private PreparedStatement listTables, containsTable;
 
     public CQLClient() {
         this("localhost", DEFAULT_PORT);
@@ -28,10 +30,6 @@ public class CQLClient implements AutoCloseable {
     public CQLClient(String add, int port) {
         cluster = Cluster.builder().withPort(port).addContactPoint(add).build();
         session = cluster.connect();
-        listKeySpaces = new SimpleStatement("SELECT * FROM "
-                + "system.schema_keyspaces");
-        containsKeySpace = session.prepare("SELECT * FROM "
-                + "system.schema_keyspaces WHERE keyspace_name=?");
         listTables = session.prepare("SELECT columnfamily_name "
                 + "FROM system.schema_columnfamilies WHERE keyspace_name=?");
         containsTable = session.prepare("SELECT columnfamily_name "
@@ -65,27 +63,44 @@ public class CQLClient implements AutoCloseable {
 
     }
 
+    /**
+     *
+     * @return
+     */
     public List<String> listKeySpaces() {
-        ResultSet results = session.execute(listKeySpaces);
-        List<Row> rows = results.all();
-        List<String> rv = new ArrayList<String>(rows.size());
-        for (Row row : rows)
-            rv.add(row.getString("keyspace_name"));
+        List<KeyspaceMetadata> keyspaces = cluster.getMetadata().getKeyspaces();
+        List<String> rv = new ArrayList<>();
+        for(KeyspaceMetadata meta : keyspaces)
+            rv.add(meta.getName());
         return rv;
     }
 
+    /**
+     *
+     * @param keyspace
+     * @return
+     */
     public boolean containsKeySpace(String keyspace) {
         boolean rv = false;
-        ResultSet rs = session.execute(containsKeySpace.bind(keyspace));
-        if (rs.one() != null)
+        KeyspaceMetadata meta = cluster.getMetadata().getKeyspace(keyspace);
+        if (meta != null)
             rv = true;
         return rv;
     }
 
+    /**
+     *
+     * @param keyspace
+     */
     public void dropKeySpace(String keyspace) {
         session.execute("DROP KEYSPACE " + keyspace);
     }
 
+    /**
+     *
+     * @param keyspace
+     * @return
+     */
     public List<String> listTables(String keyspace) {
         ResultSet rs = session.execute(listTables.bind(keyspace));
         List<String> rv = new ArrayList<String>();
@@ -102,31 +117,39 @@ public class CQLClient implements AutoCloseable {
         return rv;
     }
 
+    /**
+     *
+     * @param keyspace
+     * @param table
+     */
     public void dropTable(String keyspace, String table) {
         session.execute("DROP TABLE " + keyspace + "." + table);
     }
 
+    /**
+     *
+     * @param keyspace
+     * @param table
+     */
     public void truncateTable(String keyspace, String table) {
         session.execute("TRUNCATE " + keyspace + "." + table);
     }
 
     @Override
     public String toString() {
-        StringBuilder builder = new StringBuilder();
+        StringBuilder sb = new StringBuilder();
 
         if (cluster == null) {
-            builder.append("Not connected.\n");
+            sb.append("Not connected.\n");
         } else {
             Metadata metadata = cluster.getMetadata();
-            builder.append("Connected to cluster:" + metadata.getClusterName()
+            sb.append("Connected to cluster:" + metadata.getClusterName()
                     + "\n");
-            for (Host host : metadata.getAllHosts()) {
-                builder.append("Datacenter: " + host.getDatacenter()
-                        + "; Host: " + host.getAddress() + "; Rack: "
+            for (Host host : metadata.getAllHosts())
+                sb.append("Datacenter: " + host.getDatacenter()+ "; Host: " + host.getAddress() + "; Rack: "
                         + host.getRack() + "\n");
-            }
         }
-        return builder.toString();
+        return sb.toString();
     }
 
     @Override
